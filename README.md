@@ -9,8 +9,9 @@ A cross-platform .NET library that ensures child processes automatically termina
 - **Windows Job Object**: Utilizes Windows Job Objects for reliable process management on Windows
 - **Process Tree Termination**: Ensures all descendant processes are also terminated
 - **Environment Variable Support**: Pass custom environment variables to child processes
-- **Command-Line Tool**: Includes a CLI for easy use in scripts and terminal
-
+- **Full ProcessStartInfo Control**: Use custom ProcessStartInfo for advanced process configuration
+- **Process Management**: Track, list, and manually remove processes as needed
+- 
 ## Requirements
 
 - .NET 9.0 or higher
@@ -82,6 +83,57 @@ using (var guardian = new ProcessGuardian())
     
     // Or manually terminate all managed processes
     guardian.KillAllProcesses();
+}
+```
+
+### Using Custom ProcessStartInfo
+
+```csharp
+using System;
+using System.Diagnostics;
+using ChildProcessGuard;
+
+using (var guardian = new ProcessGuardian())
+{
+    var startInfo = new ProcessStartInfo
+    {
+        FileName = "powershell.exe",
+        Arguments = "-NoProfile -ExecutionPolicy Bypass -Command \"Get-Process\"",
+        UseShellExecute = false,
+        RedirectStandardOutput = true,
+        CreateNoWindow = true,
+        Verb = "runas" // Run as administrator
+    };
+    
+    // Start a process with full control over all ProcessStartInfo properties
+    var process = guardian.StartProcessWithStartInfo(startInfo);
+    
+    // Read output
+    string output = process.StandardOutput.ReadToEnd();
+    Console.WriteLine(output);
+}
+```
+
+### Getting Managed Processes
+
+```csharp
+using System;
+using ChildProcessGuard;
+
+using (var guardian = new ProcessGuardian())
+{
+    // Start some processes
+    guardian.StartProcess("notepad.exe");
+    guardian.StartProcess("calc.exe");
+    
+    // Get a list of all managed processes
+    var managedProcesses = guardian.GetManagedProcesses();
+    
+    Console.WriteLine($"Currently managing {managedProcesses.Count} processes:");
+    foreach (var process in managedProcesses)
+    {
+        Console.WriteLine($"- {process.ProcessName} (PID: {process.Id})");
+    }
 }
 ```
 
