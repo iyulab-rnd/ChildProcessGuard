@@ -9,7 +9,7 @@ namespace ChildProcessGuard;
 /// </summary>
 public class ProcessGuardian : IDisposable
 {
-    private List<Process> _childProcesses = new List<Process>();
+    private readonly List<Process> _childProcesses = [];
     private IntPtr _jobHandle = IntPtr.Zero;
     private bool _isDisposed;
     private readonly bool _isWindows;
@@ -39,7 +39,7 @@ public class ProcessGuardian : IDisposable
     /// <param name="workingDirectory">The working directory</param>
     /// <param name="environmentVariables">A dictionary of environment variables</param>
     /// <returns>The started process</returns>
-    public Process StartProcess(string fileName, string arguments = "", string workingDirectory = null, Dictionary<string, string> environmentVariables = null)
+    public Process StartProcess(string fileName, string arguments = "", string? workingDirectory = null, Dictionary<string, string>? environmentVariables = null)
     {
         var processStartInfo = new ProcessStartInfo
         {
@@ -66,7 +66,18 @@ public class ProcessGuardian : IDisposable
             }
         }
 
-        var process = new Process { StartInfo = processStartInfo };
+        return StartProcessWithStartInfo(processStartInfo);
+    }
+
+    /// <summary>
+    /// Starts a new process with the provided ProcessStartInfo and registers it for management.
+    /// This allows full control over all ProcessStartInfo properties including Verb, CreateNoWindow, etc.
+    /// </summary>
+    /// <param name="startInfo">The ProcessStartInfo instance to use</param>
+    /// <returns>The started process</returns>
+    public Process StartProcessWithStartInfo(ProcessStartInfo startInfo)
+    {
+        var process = new Process { StartInfo = startInfo };
         process.Start();
 
         lock (_childProcesses)
@@ -180,7 +191,7 @@ public class ProcessGuardian : IDisposable
             }
         };
 
-        int infoSize = Marshal.SizeOf(typeof(NativeMethods.JOBOBJECT_EXTENDED_LIMIT_INFORMATION));
+        int infoSize = Marshal.SizeOf<NativeMethods.JOBOBJECT_EXTENDED_LIMIT_INFORMATION>();
         IntPtr extendedInfoPtr = Marshal.AllocHGlobal(infoSize);
 
         try
@@ -202,76 +213,7 @@ public class ProcessGuardian : IDisposable
     {
         lock (_childProcesses)
         {
-            return _childProcesses.ToArray();
+            return [.. _childProcesses];
         }
     }
-}
-
-/// <summary>
-/// Native methods for Windows API
-/// </summary>
-internal static class NativeMethods
-{
-    // P/Invoke declarations for Windows API
-    [DllImport("kernel32.dll", SetLastError = true)]
-    internal static extern IntPtr CreateJobObject(IntPtr lpJobAttributes, string lpName);
-
-    [DllImport("kernel32.dll", SetLastError = true)]
-    internal static extern bool AssignProcessToJobObject(IntPtr hJob, IntPtr hProcess);
-
-    [DllImport("kernel32.dll", SetLastError = true)]
-    internal static extern bool SetInformationJobObject(IntPtr hJob, JobObjectInfoType infoType, IntPtr lpJobObjectInfo, uint cbJobObjectInfoLength);
-
-    [DllImport("kernel32.dll", SetLastError = true)]
-    internal static extern bool CloseHandle(IntPtr handle);
-
-    [StructLayout(LayoutKind.Sequential)]
-    internal struct JOBOBJECT_EXTENDED_LIMIT_INFORMATION
-    {
-        public JOBOBJECT_BASIC_LIMIT_INFORMATION BasicLimitInformation;
-        public IO_COUNTERS IoInfo;
-        public UIntPtr ProcessMemoryLimit;
-        public UIntPtr JobMemoryLimit;
-        public UIntPtr PeakProcessMemoryUsed;
-        public UIntPtr PeakJobMemoryUsed;
-    }
-
-    [StructLayout(LayoutKind.Sequential)]
-    internal struct IO_COUNTERS
-    {
-        public ulong ReadOperationCount;
-        public ulong WriteOperationCount;
-        public ulong OtherOperationCount;
-        public ulong ReadTransferCount;
-        public ulong WriteTransferCount;
-        public ulong OtherTransferCount;
-    }
-
-    [StructLayout(LayoutKind.Sequential)]
-    internal struct JOBOBJECT_BASIC_LIMIT_INFORMATION
-    {
-        public long PerProcessUserTimeLimit;
-        public long PerJobUserTimeLimit;
-        public uint LimitFlags;
-        public UIntPtr MinimumWorkingSetSize;
-        public UIntPtr MaximumWorkingSetSize;
-        public uint ActiveProcessLimit;
-        public IntPtr Affinity;
-        public uint PriorityClass;
-        public uint SchedulingClass;
-    }
-
-    internal enum JobObjectInfoType
-    {
-        AssociateCompletionPortInformation = 7,
-        BasicLimitInformation = 2,
-        BasicUIRestrictions = 4,
-        EndOfJobTimeInformation = 6,
-        ExtendedLimitInformation = 9,
-        SecurityLimitInformation = 5,
-        GroupInformation = 11
-    }
-
-    // JOB_OBJECT_LIMIT constants
-    internal const uint JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE = 0x2000;
 }
