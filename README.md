@@ -1,20 +1,28 @@
 # ChildProcessGuard
 
-A cross-platform .NET library that ensures child processes automatically terminate when the parent process exits unexpectedly.
+A robust, cross-platform .NET library that ensures child processes automatically terminate when the parent process exits unexpectedly. Enhanced with advanced process management, monitoring, and configuration options.
 
 ## Features
 
-- **Cross-Platform Support**: Works on Windows, Linux, and macOS
+- **Cross-Platform Support**: Works seamlessly on Windows, Linux, and macOS
 - **Automatic Cleanup**: Child processes are automatically terminated when the parent process exits
 - **Windows Job Object**: Utilizes Windows Job Objects for reliable process management on Windows
+- **Unix Process Groups**: Uses process groups on Unix systems for better process tree management
 - **Process Tree Termination**: Ensures all descendant processes are also terminated
-- **Environment Variable Support**: Pass custom environment variables to child processes
-- **Full ProcessStartInfo Control**: Use custom ProcessStartInfo for advanced process configuration
-- **Process Management**: Track, list, and manually remove processes as needed
-- 
+- **Async/Await Support**: Full asynchronous API with cancellation token support
+- **Advanced Configuration**: Flexible options for timeouts, logging, and behavior customization
+- **Real-time Monitoring**: Process statistics, lifecycle events, and health monitoring
+- **Batch Processing**: Start multiple processes concurrently with built-in concurrency control
+- **Builder Pattern**: Easy configuration with fluent API
+- **Graceful Shutdown**: Configurable timeout and force-kill fallback mechanisms
+- **Thread-Safe**: Concurrent operations supported with proper synchronization
+- **Memory Management**: Automatic cleanup of disposed processes and memory leak prevention
+- **Error Handling**: Comprehensive error tracking and event notifications
+
 ## Requirements
 
-- .NET 9.0 or higher
+- .NET Standard 2.1 or higher
+- .NET Framework 4.7.2+ / .NET Core 2.1+ / .NET 5+
 
 ## Installation
 
@@ -30,141 +38,305 @@ Install-Package ChildProcessGuard
 dotnet add package ChildProcessGuard
 ```
 
-## Usage
+## Quick Start
 
-### Basic Library Usage
+### Basic Usage
 
 ```csharp
-using System;
 using ChildProcessGuard;
 
-// Create a process guardian
-using (var guardian = new ProcessGuardian())
+// Simple usage with automatic cleanup
+using var guardian = new ProcessGuardian();
+
+var process = guardian.StartProcess("notepad.exe");
+Console.WriteLine($"Started process with PID: {process.Id}");
+
+// Process will be automatically terminated when guardian is disposed
+```
+
+### Advanced Configuration
+
+```csharp
+using ChildProcessGuard;
+
+// Configure with builder pattern
+using var guardian = ProcessGuardianBuilder.Debug()
+    .WithKillTimeout(TimeSpan.FromSeconds(10))
+    .WithMaxProcesses(50)
+    .WithDetailedLogging(true)
+    .WithAutoCleanup(true, TimeSpan.FromMinutes(1))
+    .Build();
+
+// Set up event handlers
+guardian.ProcessError += (sender, e) => 
+    Console.WriteLine($"Error: {e.Operation} - {e.Exception.Message}");
+
+guardian.ProcessLifecycleEvent += (sender, e) => 
+    Console.WriteLine($"Event: {e.EventType} - {e.ProcessInfo}");
+
+var process = guardian.StartProcess("myapp.exe", "--verbose");
+```
+
+## Usage Examples
+
+### Environment Variables and Working Directory
+
+```csharp
+using var guardian = new ProcessGuardian();
+
+var envVars = new Dictionary<string, string>
 {
-    // Start a process
-    var process = guardian.StartProcess("notepad.exe");
-    
-    Console.WriteLine($"Process started with PID: {process.Id}");
-    Console.WriteLine("This process will automatically terminate when the application exits.");
-    
-    // Wait for user input
-    Console.WriteLine("Press any key to exit...");
-    Console.ReadKey();
-    
-    // When the using block exits, all child processes will be terminated
+    { "DEBUG", "true" },
+    { "CONFIG_PATH", "/etc/myapp/config.json" },
+    { "LOG_LEVEL", "verbose" }
+};
+
+var process = guardian.StartProcess(
+    "myapp.exe", 
+    "--config config.json", 
+    workingDirectory: "/path/to/working/dir",
+    environmentVariables: envVars
+);
+```
+
+### Custom ProcessStartInfo
+
+```csharp
+using var guardian = new ProcessGuardian();
+
+var startInfo = new ProcessStartInfo
+{
+    FileName = "powershell.exe",
+    Arguments = "-NoProfile -Command \"Get-Process\"",
+    UseShellExecute = false,
+    RedirectStandardOutput = true,
+    CreateNoWindow = true
+};
+
+var process = guardian.StartProcessWithStartInfo(startInfo);
+string output = process.StandardOutput.ReadToEnd();
+```
+
+### Batch Processing
+
+```csharp
+using var guardian = ProcessGuardianBuilder.HighPerformance().Build();
+
+// Prepare multiple processes
+var processInfos = Enumerable.Range(1, 5)
+    .Select(i => new ProcessStartInfo("ping", "127.0.0.1 -n 3"))
+    .ToList();
+
+// Start all processes concurrently
+var processes = await guardian.StartProcessesBatchAsync(processInfos, maxConcurrency: 3);
+
+// Wait for all to complete
+bool allCompleted = await guardian.WaitForAllProcessesAsync(TimeSpan.FromSeconds(30));
+Console.WriteLine($"All processes completed: {allCompleted}");
+```
+
+### Process Monitoring and Statistics
+
+```csharp
+using var guardian = new ProcessGuardian();
+
+// Start some processes
+guardian.StartProcess("notepad.exe");
+guardian.StartProcess("calc.exe");
+
+// Get real-time statistics
+var stats = guardian.GetStatistics();
+Console.WriteLine($"Total: {stats.TotalProcesses}, Running: {stats.RunningProcesses}");
+Console.WriteLine($"Memory Usage: {stats.TotalMemoryUsage / 1024 / 1024:F1} MB");
+
+// Filter processes by status
+var runningProcesses = guardian.GetProcessesByStatus(ProcessStatus.Running);
+var longRunning = guardian.GetLongRunningProcesses(TimeSpan.FromSeconds(30));
+
+// Get detailed process information
+foreach (var processInfo in runningProcesses)
+{
+    Console.WriteLine($"Process: {processInfo}");
+    Console.WriteLine($"Runtime: {processInfo.GetRuntime():hh\\:mm\\:ss}");
+    Console.WriteLine($"Exit Code: {processInfo.GetExitCode()}");
 }
 ```
 
-### Advanced Usage with Arguments and Environment Variables
+### Async Operations
 
 ```csharp
-using System;
-using System.Collections.Generic;
-using ChildProcessGuard;
+using var guardian = new ProcessGuardian();
 
-using (var guardian = new ProcessGuardian())
-{
-    var envVars = new Dictionary<string, string>
-    {
-        { "DEBUG", "true" },
-        { "CONFIG_PATH", "/etc/myapp/config.json" }
-    };
-    
-    // Start a process with arguments and environment variables
-    var process = guardian.StartProcess(
-        "myapp.exe", 
-        "--verbose --config config.json", 
-        workingDirectory: "/path/to/working/dir",
-        environmentVariables: envVars
-    );
-    
-    // You can also manually remove a process from management
-    guardian.RemoveProcess(process);
-    
-    // Or manually terminate all managed processes
-    guardian.KillAllProcesses();
-}
+// Start process asynchronously
+var process = await guardian.StartProcessAsync("myapp.exe", cancellationToken: cts.Token);
+
+// Gracefully terminate all processes
+int terminated = await guardian.KillAllProcessesAsync(TimeSpan.FromSeconds(10));
+Console.WriteLine($"Terminated {terminated} processes");
+
+// Selective termination
+int killed = await guardian.TerminateProcessesWhere(
+    p => p.GetRuntime() > TimeSpan.FromMinutes(5),
+    TimeSpan.FromSeconds(5)
+);
 ```
 
-### Using Custom ProcessStartInfo
+### Error Handling and Events
 
 ```csharp
-using System;
-using System.Diagnostics;
-using ChildProcessGuard;
-
-using (var guardian = new ProcessGuardian())
+var options = new ProcessGuardianOptions
 {
-    var startInfo = new ProcessStartInfo
-    {
-        FileName = "powershell.exe",
-        Arguments = "-NoProfile -ExecutionPolicy Bypass -Command \"Get-Process\"",
-        UseShellExecute = false,
-        RedirectStandardOutput = true,
-        CreateNoWindow = true,
-        Verb = "runas" // Run as administrator
-    };
-    
-    // Start a process with full control over all ProcessStartInfo properties
-    var process = guardian.StartProcessWithStartInfo(startInfo);
-    
-    // Read output
-    string output = process.StandardOutput.ReadToEnd();
-    Console.WriteLine(output);
-}
+    ThrowOnProcessOperationFailure = false,
+    EnableDetailedLogging = true
+};
+
+using var guardian = new ProcessGuardian(options);
+
+var errors = new List<ProcessErrorEventArgs>();
+guardian.ProcessError += (sender, e) => errors.Add(e);
+
+guardian.CleanupCompleted += (sender, e) => 
+    Console.WriteLine($"Cleanup: {e.ProcessesCleanedUp} cleaned, {e.ProcessesFailedToCleanup} failed");
+
+// Operations will not throw exceptions due to configuration
+guardian.StartProcess("non_existent_program.exe");
+Console.WriteLine($"Captured {errors.Count} errors");
 ```
 
-### Getting Managed Processes
+### Cross-Platform Example
 
 ```csharp
-using System;
-using ChildProcessGuard;
+using var guardian = new ProcessGuardian();
 
-using (var guardian = new ProcessGuardian())
+string executable, arguments;
+
+if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
 {
-    // Start some processes
-    guardian.StartProcess("notepad.exe");
-    guardian.StartProcess("calc.exe");
-    
-    // Get a list of all managed processes
-    var managedProcesses = guardian.GetManagedProcesses();
-    
-    Console.WriteLine($"Currently managing {managedProcesses.Count} processes:");
-    foreach (var process in managedProcesses)
+    executable = "cmd.exe";
+    arguments = "/c echo Hello from Windows";
+}
+else
+{
+    executable = "/bin/bash";
+    arguments = "-c 'echo Hello from Unix'";
+}
+
+var process = guardian.StartProcess(executable, arguments);
+await process.WaitForExitAsync();
+```
+
+## Configuration Options
+
+### ProcessGuardianOptions
+
+```csharp
+var options = new ProcessGuardianOptions
+{
+    ProcessKillTimeout = TimeSpan.FromSeconds(30),      // Graceful termination timeout
+    EnableDetailedLogging = false,                      // Enable verbose logging
+    ForceKillOnTimeout = true,                          // Force kill if timeout exceeded
+    MaxManagedProcesses = 100,                          // Maximum concurrent processes
+    AutoCleanupDisposedProcesses = true,                // Auto cleanup exited processes
+    CleanupInterval = TimeSpan.FromMinutes(5),          // Cleanup check interval
+    UseProcessGroupsOnUnix = true,                      // Use process groups on Unix
+    ThrowOnProcessOperationFailure = false              // Exception handling behavior
+};
+
+using var guardian = new ProcessGuardian(options);
+```
+
+### Predefined Configurations
+
+```csharp
+// High performance configuration
+using var guardian = ProcessGuardianBuilder.HighPerformance().Build();
+
+// Debug configuration with detailed logging
+using var guardian = ProcessGuardianBuilder.Debug().Build();
+
+// Custom configuration
+using var guardian = ProcessGuardianBuilder.Default
+    .WithKillTimeout(TimeSpan.FromSeconds(15))
+    .WithMaxProcesses(200)
+    .WithDetailedLogging(true)
+    .Build();
+```
+
+## Event Handling
+
+```csharp
+using var guardian = new ProcessGuardian();
+
+// Process lifecycle events
+guardian.ProcessLifecycleEvent += (sender, e) =>
+{
+    switch (e.EventType)
     {
-        Console.WriteLine($"- {process.ProcessName} (PID: {process.Id})");
+        case ProcessLifecycleEventType.ProcessStarted:
+            Console.WriteLine($"Started: {e.ProcessInfo}");
+            break;
+        case ProcessLifecycleEventType.ProcessExited:
+            Console.WriteLine($"Exited: {e.ProcessInfo}");
+            break;
+        case ProcessLifecycleEventType.ProcessTerminated:
+            Console.WriteLine($"Terminated: {e.ProcessInfo}");
+            break;
     }
-}
-```
+};
 
-### Command-Line Tool Usage
+// Error tracking
+guardian.ProcessError += (sender, e) =>
+{
+    Console.WriteLine($"Error in {e.Operation}: {e.Exception.Message}");
+    if (e.ProcessId.HasValue)
+        Console.WriteLine($"Process ID: {e.ProcessId.Value}");
+};
 
-The package includes a command-line tool for easier usage:
-
-```bash
-# Install the tool
-dotnet tool install --global ChildProcessGuard.Cli
-
-# Run a program with process guarding
-cpguard execute myapp.exe --args="--config config.json" --env="DEBUG=true"
-
-# List all currently managed processes
-cpguard list
-
-# Kill all managed processes
-cpguard kill
+// Cleanup notifications
+guardian.CleanupCompleted += (sender, e) =>
+{
+    Console.WriteLine($"Cleanup completed in {e.CleanupDuration:hh\\:mm\\:ss}");
+};
 ```
 
 ## How It Works
 
-- **On Windows**: Uses Job Objects with the `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` flag to ensure child processes are terminated when the job handle is closed
-- **On Linux/macOS**: Combines process tracking and explicit cleanup during AppDomain unload
-- **All Platforms**: Includes a failsafe mechanism using `AppDomain.CurrentDomain.ProcessExit` event
+### Windows Implementation
+- **Job Objects**: Uses Windows Job Objects with `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` flag
+- **Process Tree Termination**: Automatically terminates all child processes when the job is closed
+- **Reliable Cleanup**: Kernel-level guarantee that processes will be terminated
 
-## License
+### Unix Implementation (Linux/macOS)
+- **Process Groups**: Creates process groups using `setpgid()` system call
+- **Signal Handling**: Uses `SIGTERM` for graceful termination, `SIGKILL` for force termination
+- **Process Tree Management**: Terminates entire process groups to ensure all descendants are cleaned up
 
-MIT
+### Cross-Platform Failsafes
+- **AppDomain Events**: Hooks into `ProcessExit` and `CancelKeyPress` events
+- **Graceful Degradation**: Falls back to basic process termination if advanced features fail
+- **Compatibility Layer**: Provides .NET 5+ features for .NET Standard 2.1
 
-## Contributing
+## Performance and Scalability
 
-Contributions are welcome! Please feel free to submit a Pull Request.
+- **Concurrent Operations**: Thread-safe with configurable concurrency limits
+- **Memory Efficient**: Automatic cleanup prevents memory leaks
+- **Batch Processing**: Efficient handling of multiple processes
+- **Resource Management**: Proper disposal of system handles and objects
+- **Monitoring Overhead**: Minimal impact with optional detailed logging
+
+## Error Handling and Resilience
+
+- **Non-blocking Errors**: Configurable exception handling behavior
+- **Comprehensive Logging**: Detailed error tracking and event notifications
+- **Graceful Degradation**: Continues operation even if some features fail
+- **Recovery Mechanisms**: Automatic retry and fallback strategies
+- **Resource Cleanup**: Ensures proper cleanup even in error scenarios
+
+## Best Practices
+
+1. **Always use `using` statements** or call `Dispose()` explicitly
+2. **Configure appropriate timeouts** based on your process characteristics
+3. **Handle events** for production applications to track errors and lifecycle
+4. **Use builder pattern** for complex configurations
+5. **Monitor statistics** in long-running applications
+6. **Test cross-platform behavior** if targeting multiple operating systems
